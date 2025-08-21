@@ -1,13 +1,25 @@
 import express from "express";
+import Redis from "ioredis";
 import { fetchWeatherApi } from "openmeteo";
 
 const app = express();
 
 const port = 3000;
 
+const redis = new Redis();
+
 app.get("/", async (req, res) => {
     const params = { "latitude": 26.17, "longitude": 91.74, "daily": ["sunrise", "sunset", "daylight_duration"], "hourly": "temperature_2m", "timezone": "GMT" };
     const url = "https://api.open-meteo.com/v1/forecast";
+
+    const cachedKey = `weather:lat:${params.latitude}:long:${params.longitude}`;
+
+    const cachedData = await redis.get(cachedKey);
+
+    if (cachedData) {
+        return res.json(JSON.parse(cachedData));
+    }
+
     const responses = await fetchWeatherApi(url, params);
 
     const response = responses[0];
@@ -55,10 +67,9 @@ app.get("/", async (req, res) => {
         },
     };
 
-    res.json({
-        "Hourly data": weatherData.hourly,
-        "Daily data": weatherData.daily,
-    })
+    await redis.set(cachedKey, JSON.stringify(weatherData), "EX", 600);
+
+    res.json(weatherData);
 })
 
 app.listen(port, () => {
